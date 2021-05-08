@@ -17,6 +17,7 @@ notebook = "*"
 pandas-profiling = "*"
 statsmodels = "*"
 numba = "*"
+pymc3 = "*"
 
 [dev-packages]
 
