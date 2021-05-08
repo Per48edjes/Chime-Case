@@ -15,6 +15,8 @@ sklearn = "*"
 jupyterlab = "*"
 notebook = "*"
 pandas-profiling = "*"
+statsmodels = "*"
+numba = "*"
 
 [dev-packages]
 
