@@ -169,10 +169,13 @@ class Cohort:
             raise ValueError("Selected model not available.")
 
     @property
+    def default_survival_model(self):
+        return self.fit_survival_model()
+
+    @property
     def h_terminal(self):
-        survival_model = self.fit_survival_model()
-        h_terminal = survival_model.hazard_.iat[-1, 0]
-        h_terminal_ci = survival_model.confidence_interval_hazard_.iloc[
+        h_terminal = self.default_survival_model.hazard_.iat[-1, 0]
+        h_terminal_ci = self.default_survival_model.confidence_interval_hazard_.iloc[
             -1, :
         ].to_numpy()
         return h_terminal, h_terminal_ci
@@ -206,7 +209,7 @@ class Cohort:
         if use_empirical_estimator:
             S_hat = self.df["Overall AU Retention Rate"]
         else:
-            S_hat = self.fit_survival_model().predict(self.df.index)
+            S_hat = self.default_survival_model.predict(self.df.index)
 
         # Modeled LTV
         modeled_ltv = (self.df["Contribution Margin per Cohort User"] * S_hat).dot(
