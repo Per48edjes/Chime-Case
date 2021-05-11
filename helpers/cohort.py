@@ -11,16 +11,19 @@ from helpers.load import df_acq_agg, df_perf
 
 
 class Cohort:
-    def __init__(self, variant=None, segment=None):
-        self._variant = variant
+    def __init__(
+        self, test_group=None, segment=None, spend_tracker_pmpm=SPEND_TRACKER_PMPM
+    ):
+        self._test_group = test_group
         self._segment = segment
-        self._cac = df_acq_agg.at[variant, "CAC"]
+        self._cac = df_acq_agg.at[test_group, "CAC"]
+        self._spend_tracker_pmpm = spend_tracker_pmpm
 
         # Properly cohort based on user inputs
-        if segment and variant:
-            data = df_perf.query("`Test Group` == @variant and Segment == @segment")
-        elif variant:
-            data = df_perf.query("`Test Group` == @variant")
+        if segment and test_group:
+            data = df_perf.query("`Test Group` == @test_group and Segment == @segment")
+        elif test_group:
+            data = df_perf.query("`Test Group` == @test_group")
         else:
             raise KeyError("Assert a cohort definition.")
 
@@ -32,10 +35,10 @@ class Cohort:
         ).sort_index()
 
         # Add analysis columns for each cohort
-        self.__add_ltv_cols()
+        self.__add_ltv_cols(spend_tracker_pmpm)
 
     def __repr__(self):
-        return f"Cohort({self._variant}, {self._segment})"
+        return f"Cohort({self._test_group}, {self._segment})"
 
     @property
     def survival_events(self):
@@ -47,7 +50,7 @@ class Cohort:
         )
         return T, E, W
 
-    def __add_ltv_cols(self):
+    def __add_ltv_cols(self, spend_tracker_pmpm=SPEND_TRACKER_PMPM):
         """
         Adds analysis columns used in the determination of LTV
         """
@@ -84,7 +87,7 @@ class Cohort:
         )
 
         self.df["Average Spend Tracker Cost per Active User"] = (
-            self.df["Spend Tracker Usage Rate"] * SPEND_TRACKER_PMPM
+            self.df["Spend Tracker Usage Rate"] * spend_tracker_pmpm
         )
 
         # Calculate empirical Contribution Margin
@@ -100,6 +103,14 @@ class Cohort:
         ]
 
         return self.df
+
+    @property
+    def test_group(self):
+        return self._test_group
+
+    @property
+    def segment(self):
+        return self._segment
 
     @property
     def df(self):
@@ -139,31 +150,45 @@ class Cohort:
         else:
             raise ValueError("Selected model not available.")
 
-    def estimate_ltv(
-        self,
-        d=0.01,
-        m_terminal_multiplier=1,
-        h_terminal_multiplier=1,
-        use_empirical_estimator=True,
-    ):
-        """
-        Calculates the expected LTV for the cohort, returning estimate LTV and
-        the portions from what's been modeled vs. what is in the terminal value,
-        respectively
-        """
-        # Set up
+    @property
+    def h_terminal(self):
         survival_model = self.fit_survival_model()
+        h_terminal = survival_model.hazard_.iat[-1, 0]
+        h_terminal_ci = survival_model.confidence_interval_hazard_.iloc[
+            -1, :
+        ].to_numpy()
+        return h_terminal, h_terminal_ci
+
+    @property
+    def m_terminal(self):
+        m_terminal = self.df.at[
+            self.df.index.max(), "Contribution Margin per Active User"
+        ]
+        return m_terminal
+
+    def generate_sim_data(self, uncertainty=1, n=10_000):
+
+        # Define upper and lower bounds for h_terminal uniform distribution
+        h_terminal_lower_95_ci, h_terminal_upper_95_ci = self.h_terminal[1]
+
+        # Generate data
+        h_terminals = np.random.uniform(
+            low=h_terminal_lower_95_ci, high=h_terminal_upper_95_ci, size=n
+        )
+        m_terminals = np.random.normal(loc=self.m_terminal, scale=uncertainty, size=n)
+
+        return np.stack([h_terminals, m_terminals]).T
+
+    def estimate_ltv(
+        self, m_terminal=None, h_terminal=None, d=0.01, use_empirical_estimator=True
+    ):
+
+        # Set up
         discount_factors = np.array([(1 + d) ** (-i) for i in self.df.index])
         if use_empirical_estimator:
             S_hat = self.df["Overall AU Retention Rate"]
         else:
-            S_hat = survival_model.predict(self.df.index)
-
-        h_terminal_default = survival_model.hazard_.iat[-1, 0]
-        h_terminal = h_terminal_default * h_terminal_multiplier
-        m_terminal = self.df.at[
-            self.df.index.max(), "Contribution Margin per Active User"
-        ]
+            S_hat = self.fit_survival_model().predict(self.df.index)
 
         # Modeled LTV
         modeled_ltv = (self.df["Contribution Margin per Active User"] * S_hat).dot(
@@ -171,11 +196,18 @@ class Cohort:
         )
 
         # Terminal LTV
+        if not h_terminal:
+            h_terminal = self.h_terminal[0]
+        if not m_terminal:
+            m_terminal = self.m_terminal
+
         terminal_ltv = (
-            discount_factors[-1] * h_terminal * m_terminal_multiplier * m_terminal
-        ) / (1 + d - h_terminal)
-        print(f"m_terminal: {m_terminal}")
-        return modeled_ltv + terminal_ltv, modeled_ltv, terminal_ltv
+            discount_factors[-1]  # Discount residual value to PV
+            * (1 - h_terminal)  # Retention rate
+            * m_terminal  # Terminal contribution margin
+        ) / (1 + d - (1 - h_terminal))
+
+        return modeled_ltv + terminal_ltv
 
 
 # Instantiate cohort objects
