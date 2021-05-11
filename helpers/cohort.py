@@ -58,6 +58,12 @@ class Cohort:
         # Add analysis columns
         self.df["Original Cohort User Count"] = self.df["Active User Count"].max()
 
+        self.df["Gross Profit per Cohort User"] = (
+            self.df["Total Purchase Dollars"]
+            * GROSS_MARGIN
+            / self.df["Original Cohort User Count"]
+        )
+
         self.df["Gross Profit per Active User"] = (
             self.df["Total Purchase Dollars"]
             * GROSS_MARGIN
@@ -83,17 +89,18 @@ class Cohort:
         )
 
         self.df["Spend Tracker Usage Rate"] = (
-            self.df["Spend Tracker Active User Count"] / self.df["Active User Count"]
+            self.df["Spend Tracker Active User Count"]
+            / self.df["Original Cohort User Count"]
         )
 
-        self.df["Average Spend Tracker Cost per Active User"] = (
+        self.df["Average Spend Tracker Cost per Cohort User"] = (
             self.df["Spend Tracker Usage Rate"] * spend_tracker_pmpm
         )
 
         # Calculate empirical Contribution Margin
-        self.df["Contribution Margin per Active User"] = (
-            self.df["Gross Profit per Active User"]
-            - self.df["Average Spend Tracker Cost per Active User"]
+        self.df["Contribution Margin per Cohort User"] = (
+            self.df["Gross Profit per Cohort User"]
+            - self.df["Average Spend Tracker Cost per Cohort User"]
         )
 
         # Censored (for lifelines)
@@ -137,9 +144,9 @@ class Cohort:
         T, E, W = self.survival_events
         if model == "PiecewiseExponential":
             if not breakpoints:
-                breakpoints = [14]
+                breakpoints = [12]
             return PiecewiseExponentialFitter(breakpoints=breakpoints).fit(
-                T, E, weights=W
+                T, E, weights=W, timeline=np.arange(0, 12 * 1000)
             )
         elif model == "KaplanMeier":
             return KaplanMeierFitter().fit(T, E, weights=W, label=label)
@@ -162,7 +169,7 @@ class Cohort:
     @property
     def m_terminal(self):
         m_terminal = self.df.at[
-            self.df.index.max(), "Contribution Margin per Active User"
+            self.df.index.max(), "Contribution Margin per Cohort User"
         ]
         return m_terminal
 
@@ -191,7 +198,7 @@ class Cohort:
             S_hat = self.fit_survival_model().predict(self.df.index)
 
         # Modeled LTV
-        modeled_ltv = (self.df["Contribution Margin per Active User"] * S_hat).dot(
+        modeled_ltv = (self.df["Contribution Margin per Cohort User"] * S_hat).dot(
             discount_factors
         )
 
