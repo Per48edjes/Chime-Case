@@ -2,7 +2,7 @@ import numpy as np
 
 from .cohort import Cohort
 
-SPEND_TRACKER_PMPM_DOMAIN = np.linspace(0, 5, 200 + 1)
+SPEND_TRACKER_PMPM_DOMAIN = np.linspace(0, 5, 100 + 1)
 
 
 def run_sim(cohort, uncertainty=2):

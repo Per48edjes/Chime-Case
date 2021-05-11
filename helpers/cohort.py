@@ -40,6 +40,17 @@ class Cohort:
     def __repr__(self):
         return f"Cohort({self._test_group}, {self._segment})"
 
+    @staticmethod
+    def cohort_roi(control, test, cohort_str="Overall"):
+        roi_cols = [
+            "Gross Profit per Cohort User",
+            "Average Spend Tracker Cost per Cohort User",
+        ]
+        term_nominal_cashflows = (test.df[roi_cols] - control.df[roi_cols]).sum()
+        lower_cac_benefit = np.array([control.cac - test.cac, 0])
+        roi = term_nominal_cashflows + lower_cac_benefit
+        print(f"{cohort_str} 18-month ROI: {roi[0]/roi[1]-1:.2%}")
+
     @property
     def survival_events(self):
         survival_table = self.df.reset_index()[
