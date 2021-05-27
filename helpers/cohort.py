@@ -198,7 +198,12 @@ class Cohort:
         return np.stack([h_terminals, m_terminals]).T
 
     def estimate_ltv(
-        self, m_terminal=None, h_terminal=None, d=0.01, use_empirical_estimator=True
+        self,
+        m_terminal=None,
+        h_terminal=None,
+        d=0.01,
+        use_empirical_estimator=True,
+        report_total=True,
     ):
 
         # Set up
@@ -225,7 +230,10 @@ class Cohort:
             * m_terminal  # Terminal contribution margin
         ) / (1 + d - (1 - h_terminal))
 
-        return modeled_ltv + terminal_ltv
+        if report_total:
+            return modeled_ltv + terminal_ltv
+        else:
+            return {"modeled_ltv": modeled_ltv, "terminal_ltv": terminal_ltv}
 
 
 # Instantiate cohort objects
